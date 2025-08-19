@@ -55,7 +55,7 @@ This application uses a Python Flask backend to securely handle API requests and
 2.  **Access the UI:**
     Open any modern web browser and navigate to the following address:
     ```
-    [http://127.0.0.1:5001](http://127.0.0.1:5001)
+    http://127.0.0.1:5001
     ```
     The server will automatically load the user interface.
 
