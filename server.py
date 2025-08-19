@@ -9,12 +9,6 @@ app = Flask(__name__)
 # Enable CORS to allow requests from your frontend
 CORS(app)
 
-# --- Configuration ---
-# IMPORTANT: It's best practice to get the API key from an environment variable
-# for better security. Set it in your terminal before running the server:
-# For Mac/Linux: export NEW_RELIC_API_KEY='YOUR_KEY_HERE'
-# For Windows:   set NEW_RELIC_API_KEY='YOUR_KEY_HERE'
-API_KEY = os.getenv('NEW_RELIC_API_KEY')
 NERDGRAPH_URL = 'https://api.newrelic.com/graphql'
 
 # --- Helper function to find the HTML file ---
@@ -52,43 +46,37 @@ def handle_query():
     This endpoint receives a NRQL query from the frontend, adds the secret API key,
     and forwards it to the New Relic NerdGraph API.
     """
-    if not API_KEY:
-        print("ERROR: NEW_RELIC_API_KEY environment variable not set.")
-        return jsonify({
-            "error": "Server configuration error: API key is missing. Please check server logs."
-        }), 500
-
     client_data = request.json
+    api_key = client_data.get('apiKey')
+    if not api_key:
+        return jsonify({"error": "API Key is missing in the request from the client."}), 400
+
     print(f"Received NRQL query for Account ID: {client_data.get('variables', {}).get('accountId')}")
     
-    # The entire GraphQL payload is now sent from the client
     graphql_payload = {
         "query": client_data.get('query'),
         "variables": client_data.get('variables')
     }
 
-    return forward_to_nerdgraph(graphql_payload)
+    return forward_to_nerdgraph(graphql_payload, api_key)
 
-# --- NEW: Route for fetching entity details ---
+# --- Route for fetching entity details ---
 @app.route('/entity', methods=['POST'])
 def handle_entity_query():
     """
     This endpoint receives an entity GUID and fetches its details.
     """
-    if not API_KEY:
-        print("ERROR: NEW_RELIC_API_KEY environment variable not set.")
-        return jsonify({
-            "error": "Server configuration error: API key is missing. Please check server logs."
-        }), 500
-
     client_data = request.json
+    api_key = client_data.get('apiKey')
     guid = client_data.get('guid')
+
+    if not api_key:
+        return jsonify({"error": "API Key is missing in the request from the client."}), 400
     if not guid:
         return jsonify({"error": "Entity GUID is required."}), 400
     
     print(f"Received entity details request for GUID: {guid}")
 
-    # Construct the specific GraphQL query for entity details
     graphql_payload = {
         "query": """
             query($guid: EntityGuid!) {
@@ -112,14 +100,14 @@ def handle_entity_query():
         "variables": { "guid": guid }
     }
     
-    return forward_to_nerdgraph(graphql_payload)
+    return forward_to_nerdgraph(graphql_payload, api_key)
 
 
-def forward_to_nerdgraph(payload):
+def forward_to_nerdgraph(payload, api_key):
     """A helper function to forward a GraphQL payload to New Relic."""
     headers = {
         'Content-Type': 'application/json',
-        'API-Key': API_KEY
+        'API-Key': api_key
     }
     try:
         response = requests.post(NERDGRAPH_URL, headers=headers, json=payload, timeout=60)

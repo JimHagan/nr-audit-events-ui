@@ -88,6 +88,10 @@
                     <h2 class="text-2xl font-semibold mb-6 border-b border-gray-700 pb-4">Query Controls</h2>
                     <div class="space-y-4 mb-6">
                         <div>
+                            <label for="apiKey" class="block text-sm font-medium text-gray-300 mb-1">New Relic API Key</label>
+                            <input type="password" id="apiKey" name="apiKey" class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="NRAK-..." required>
+                        </div>
+                        <div>
                             <label for="accountId" class="block text-sm font-medium text-gray-300 mb-1">New Relic Account ID</label>
                             <input type="number" id="accountId" name="accountId" class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="e.g., 1234567" required>
                         </div>
@@ -226,7 +230,7 @@
                     </section>
                 </div>
                 <div id="initialMessage" class="flex items-center justify-center h-full bg-gray-900 rounded-xl border border-gray-700 p-8">
-                    <p class="text-gray-400 text-center">Enter your Account ID and run a query to see results.</p>
+                    <p class="text-gray-400 text-center">Enter your credentials and run a query to see results.</p>
                 </div>
             </div>
         </div>
@@ -282,6 +286,7 @@
         // --- MAIN APP SCRIPT ---
         document.addEventListener('DOMContentLoaded', () => {
             const form = document.getElementById('queryForm');
+            const apiKeyInput = document.getElementById('apiKey');
             const eventFilterInput = document.getElementById('eventFilterInput');
             const filteredEventCount = document.getElementById('filteredEventCount');
             const initialMessage = document.getElementById('initialMessage');
@@ -376,14 +381,16 @@
 
                 try {
                     const formData = new FormData(form);
+                    const apiKey = formData.get('apiKey');
                     const accountId = parseInt(formData.get('accountId'), 10);
-                    if (!accountId) {
-                        showError("Account ID is required.");
+                    if (!apiKey || !accountId) {
+                        showError("API Key and Account ID are required.");
                         setLoading(false);
                         return;
                     }
 
                     const obfuscatedAccountId = accountId.toString().substring(0, 4) + '*'.repeat(Math.max(0, accountId.toString().length - 4));
+                    const obfuscatedApiKey = apiKey.substring(0, 6) + '*'.repeat(Math.max(0, apiKey.length - 6));
                     const actionFilter = formData.get('actionIdentifier').trim() || 'None';
                     const actorTypeFilter = formData.get('actorType').trim() || 'None';
                     const actorEmailFilter = formData.get('actorEmail').trim() || 'None';
@@ -396,7 +403,7 @@
                     logToConsole(`Actor Email Filter: ${actorEmailFilter}`);
                     logToConsole(`Endpoint: http://127.0.0.1:5001/query`);
                     logToConsole(`Account ID: ${obfuscatedAccountId}`);
-                    logToConsole(`API Key: Handled securely on server`);
+                    logToConsole(`API Key: ${obfuscatedApiKey}`);
                     logToConsole('Sending 5 GraphQL queries...');
 
                     const nrqlClause = buildNrqlClause(formData);
@@ -408,11 +415,11 @@
                         byType: `SELECT count(*) FROM NrAuditEvent ${nrqlClause} FACET actorType LIMIT MAX`
                     };
                     const [totalRes, eventsRes, byActionRes, byEmailRes, byTypeRes] = await Promise.all([
-                        runNerdGraphQuery(accountId, queries.total),
-                        runNerdGraphQuery(accountId, queries.events),
-                        runNerdGraphQuery(accountId, queries.byAction),
-                        runNerdGraphQuery(accountId, queries.byEmail),
-                        runNerdGraphQuery(accountId, queries.byType)
+                        runNerdGraphQuery(apiKey, accountId, queries.total),
+                        runNerdGraphQuery(apiKey, accountId, queries.events),
+                        runNerdGraphQuery(apiKey, accountId, queries.byAction),
+                        runNerdGraphQuery(apiKey, accountId, queries.byEmail),
+                        runNerdGraphQuery(apiKey, accountId, queries.byType)
                     ]);
 
                     const endTime = performance.now();
@@ -491,19 +498,20 @@
                 }
             }
 
-            async function runNerdGraphQuery(accountId, nrql) {
+            async function runNerdGraphQuery(apiKey, accountId, nrql) {
                 const serverEndpoint = 'http://127.0.0.1:5001/query';
-                const graphqlQuery = {
+                const payload = {
+                    apiKey: apiKey,
                     query: `query($accountId: Int!, $nrql: Nrql!) { actor { account(id: $accountId) { nrql(query: $nrql, timeout: 60) { results } } } }`,
                     variables: { accountId, nrql }
                 };
 
-                logToConsole(`Sending Payload for NRQL: "${nrql.substring(0, 30)}..."`, graphqlQuery);
+                logToConsole(`Sending Payload for NRQL: "${nrql.substring(0, 30)}..."`, { query: payload.query, variables: payload.variables });
 
                 const response = await fetch(serverEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(graphqlQuery)
+                    body: JSON.stringify(payload)
                 });
 
                 logToConsole(`Response Code from server: ${response.status} ${response.statusText}`);
@@ -736,10 +744,15 @@
             openModal();
 
             try {
+                const apiKey = document.getElementById('apiKey').value;
+                if (!apiKey) {
+                    throw new Error("API Key is missing. Please enter it in the form.");
+                }
+
                 const response = await fetch('http://127.0.0.1:5001/entity', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ guid: guid })
+                    body: JSON.stringify({ guid: guid, apiKey: apiKey })
                 });
 
                 const jsonResponse = await response.json();
