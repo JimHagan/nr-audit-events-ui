@@ -68,6 +68,30 @@
         input[type=number] {
             -moz-appearance: textfield;
         }
+        /* Styles for hover-to-expand text */
+        .facet-item {
+            position: relative; /* Needed for absolute positioning of the child */
+        }
+        .facet-text {
+            /* This is the default, truncated state */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .facet-item:hover .facet-text {
+            /* This is the expanded state on hover */
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: auto; /* Let it expand to its content width */
+            min-width: 100%; /* At least as wide as its container */
+            background-color: #1f2937; /* gray-800 */
+            padding: 2px 6px;
+            border-radius: 4px;
+            z-index: 20;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+            overflow: visible;
+        }
     </style>
 </head>
 <body class="bg-gray-950 text-gray-200">
@@ -179,22 +203,25 @@
                 <div id="resultsContainer" class="hidden">
                     <section id="summarySection">
                         <h2 class="text-2xl font-semibold mb-4">Summary</h2>
-                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
-                                <h3 class="text-sm font-medium text-gray-400">Total Events</h3>
-                                <p id="totalEvents" class="text-3xl font-bold text-emerald-400 mt-1">0</p>
+                        <!-- UPDATED: New grid layout for summary -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="md:col-span-1 space-y-4">
+                                <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                                    <h3 class="text-sm font-medium text-gray-400">Total Events</h3>
+                                    <p id="totalEvents" class="text-3xl font-bold text-emerald-400 mt-1">0</p>
+                                </div>
+                                <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                                    <h3 class="text-sm font-medium text-gray-400">By Actor Type</h3>
+                                    <div id="byActorType" class="text-sm mt-2 space-y-1"></div>
+                                </div>
                             </div>
-                            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700 md:col-span-2 xl:col-span-1">
-                                <h3 class="text-sm font-medium text-gray-400">By Actor Type</h3>
-                                <div id="byActorType" class="text-sm mt-2 space-y-1"></div>
-                            </div>
-                            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                            <div class="md:col-span-1 bg-gray-900 p-4 rounded-lg border border-gray-700">
                                 <h3 class="text-sm font-medium text-gray-400">By Actor Email</h3>
-                                <div id="byActorEmail" class="text-sm mt-2 space-y-1 max-h-32 overflow-y-auto"></div>
+                                <div id="byActorEmail" class="text-sm mt-2 space-y-1 max-h-48 overflow-y-auto"></div>
                             </div>
-                            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                            <div class="md:col-span-1 bg-gray-900 p-4 rounded-lg border border-gray-700">
                                 <h3 class="text-sm font-medium text-gray-400">By Action Identifier</h3>
-                                <div id="byActionIdentifier" class="text-sm mt-2 space-y-1 max-h-32 overflow-y-auto"></div>
+                                <div id="byActionIdentifier" class="text-sm mt-2 space-y-1 max-h-48 overflow-y-auto"></div>
                             </div>
                         </div>
                     </section>
@@ -621,9 +648,9 @@
                 }
                 data.forEach(item => {
                     const div = document.createElement('div');
-                    div.className = 'flex justify-between items-center';
+                    div.className = 'facet-item flex justify-between items-center';
                     const facetName = document.createElement('span');
-                    facetName.className = 'truncate text-gray-300';
+                    facetName.className = 'facet-text text-gray-300';
                     facetName.textContent = item.facet || '(not set)';
                     const count = document.createElement('span');
                     count.className = 'font-semibold text-emerald-400 bg-gray-800 px-2 py-0.5 rounded-full text-xs';
