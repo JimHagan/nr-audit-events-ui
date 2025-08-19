@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Relic Audit Event Explorer</title>
+    <script src="https://cdn-tailwindcss.vercel.app/"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Flatpickr CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #10b981; /* emerald-500 */
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Styles for the modal */
+        .modal-overlay {
+            transition: opacity 0.3s ease;
+        }
+        .modal-content {
+            transition: transform 0.3s ease;
+        }
+        /* Style for the details/summary arrow */
+        summary::marker {
+            color: #6b7280; /* gray-500 */
+        }
+        /* Custom styles for Flatpickr */
+        .flatpickr-calendar {
+            background-color: #111827; /* gray-900 */
+            border: 1px solid #374151; /* gray-700 */
+        }
+        .flatpickr-day {
+            color: #f9fafb; /* gray-50 - Brighter day numbers */
+        }
+        .flatpickr-day.selected {
+            background-color: #059669; /* emerald-600 */
+            border-color: #059669;
+        }
+        .flatpickr-day:hover {
+            background-color: #1f2937; /* gray-800 */
+        }
+        .flatpickr-time input.flatpickr-hour, .flatpickr-time input.flatpickr-minute {
+            color: #d1d5db; /* gray-300 */
+        }
+        .numInputWrapper span:hover {
+            background: #1f2937; /* gray-800 */
+        }
+        span.flatpickr-weekday, .flatpickr-months .flatpickr-month {
+            color: #d1d5db; /* gray-300 */
+        }
+        /* Hide spinners from number inputs */
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-200">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        
+        <header class="mb-8">
+            <h1 class="text-4xl font-bold text-emerald-400">New Relic Audit Event Explorer</h1>
+            <p class="text-gray-400 mt-2">Use the NerdGraph API to query NrAuditEvent data from your New Relic account.</p>
+        </header>
+
+        <!-- Main Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Left Column: Controls -->
+            <div class="lg-col-span-1 bg-gray-900 p-6 rounded-xl shadow-lg border border-gray-700">
+                <form id="queryForm">
+                    <h2 class="text-2xl font-semibold mb-6 border-b border-gray-700 pb-4">Query Controls</h2>
+                    <div class="space-y-4 mb-6">
+                        <div>
+                            <label for="accountId" class="block text-sm font-medium text-gray-300 mb-1">New Relic Account ID</label>
+                            <input type="number" id="accountId" name="accountId" class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="e.g., 1234567" required>
+                        </div>
+                    </div>
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Date Range</label>
+                        <div class="flex items-center space-x-4">
+                            <label class="flex items-center">
+                                <input type="radio" name="dateRangeType" value="relative" class="form-radio h-4 w-4 text-emerald-600 bg-gray-800 border-gray-700 focus:ring-emerald-500" checked>
+                                <span class="ml-2 text-sm">Relative</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="dateRangeType" value="absolute" class="form-radio h-4 w-4 text-emerald-600 bg-gray-800 border-gray-700 focus:ring-emerald-500">
+                                <span class="ml-2 text-sm">Absolute</span>
+                            </label>
+                        </div>
+                        <div id="relativeDateContainer" class="mt-3">
+                            <label for="lastDays" class="block text-xs font-medium text-gray-400 mb-1">Last N Days</label>
+                            <input type="number" id="lastDays" name="lastDays" value="7" class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                        </div>
+                        <div id="absoluteDateContainer" class="hidden mt-3 space-y-2">
+                            <div>
+                                <label for="startDate" class="block text-xs font-medium text-gray-400 mb-1">Start Date</label>
+                                <div class="relative">
+                                    <input type="text" id="startDate" name="startDate" placeholder="Select start date..." class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                                    <div id="startDateIcon" class="absolute inset-y-0 right-0 flex items-center pr-3 cursor-pointer">
+                                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="endDate" class="block text-xs font-medium text-gray-400 mb-1">End Date</label>
+                                <div class="relative">
+                                    <input type="text" id="endDate" name="endDate" placeholder="Select end date..." class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                                    <div id="endDateIcon" class="absolute inset-y-0 right-0 flex items-center pr-3 cursor-pointer">
+                                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="space-y-4 mb-8">
+                        <div>
+                            <label for="actionIdentifier" class="block text-sm font-medium text-gray-300 mb-1">Action Identifier Filter</label>
+                            <input type="text" id="actionIdentifier" name="actionIdentifier" class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="e.g., dashboard.create (optional)">
+                        </div>
+                        <div>
+                            <label for="actorType" class="block text-sm font-medium text-gray-300 mb-1">Actor Type Filter</label>
+                            <input type="text" id="actorType" name="actorType" class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="e.g., USER (optional)">
+                        </div>
+                        <div>
+                            <label for="actorEmail" class="block text-sm font-medium text-gray-300 mb-1">Actor Email Filter</label>
+                            <input type="text" id="actorEmail" name="actorEmail" class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="e.g., user@example.com (optional)">
+                        </div>
+                        <p class="text-xs text-gray-500 !mt-2">All text filters allow partial matches.</p>
+                    </div>
+                    <button type="submit" id="queryButton" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-md transition duration-300 ease-in-out flex items-center justify-center disabled:bg-gray-500 disabled:cursor-not-allowed">
+                        <span id="buttonText">Run Query</span>
+                        <div id="buttonSpinner" class="spinner hidden ml-3" style="width: 20px; height: 20px; border-width: 2px;"></div>
+                    </button>
+                </form>
+
+                <!-- Collapsible Debug Console -->
+                <div class="mt-6">
+                    <details id="debugDetails" class="bg-gray-950 border border-gray-700 rounded-lg">
+                        <summary class="cursor-pointer p-3 text-lg font-semibold text-gray-400 hover:bg-gray-800/50 rounded-t-lg list-none flex items-center">
+                            <span class="mr-2">
+                                <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            </span>
+                            Debug Console
+                        </summary>
+                        <div id="debugConsole" class="p-3 border-t border-gray-700 h-48 overflow-y-auto text-xs font-mono">
+                            <p class="text-gray-500">Console initialized. Ready for query.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+
+            <!-- Right Column: Results -->
+            <div class="lg:col-span-2">
+                <div id="errorMessage" class="hidden bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg mb-6" role="alert">
+                    <strong class="font-bold">Error:</strong>
+                    <span class="block sm:inline" id="errorText"></span>
+                </div>
+                <div id="resultsContainer" class="hidden">
+                    <section id="summarySection">
+                        <h2 class="text-2xl font-semibold mb-4">Summary</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                                <h3 class="text-sm font-medium text-gray-400">Total Events</h3>
+                                <p id="totalEvents" class="text-3xl font-bold text-emerald-400 mt-1">0</p>
+                            </div>
+                            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700 md:col-span-2 xl:col-span-1">
+                                <h3 class="text-sm font-medium text-gray-400">By Actor Type</h3>
+                                <div id="byActorType" class="text-sm mt-2 space-y-1"></div>
+                            </div>
+                            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                                <h3 class="text-sm font-medium text-gray-400">By Actor Email</h3>
+                                <div id="byActorEmail" class="text-sm mt-2 space-y-1 max-h-32 overflow-y-auto"></div>
+                            </div>
+                            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                                <h3 class="text-sm font-medium text-gray-400">By Action Identifier</h3>
+                                <div id="byActionIdentifier" class="text-sm mt-2 space-y-1 max-h-32 overflow-y-auto"></div>
+                            </div>
+                        </div>
+                    </section>
+                    <section id="eventsTableSection" class="mt-8">
+                        <div class="flex justify-between items-baseline mb-4">
+                            <div class="flex items-baseline">
+                                <h2 class="text-2xl font-semibold">Event Details</h2>
+                                <span id="eventDates" class="ml-3 text-sm text-gray-400 font-normal"></span>
+                            </div>
+                            <span id="filteredEventCount" class="text-sm text-gray-400"></span>
+                        </div>
+                        
+                        <div class="flex items-center justify-between mb-4 space-x-4">
+                            <div class="relative flex-grow">
+                                <label for="eventFilterInput" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                </label>
+                                <input type="text" id="eventFilterInput" placeholder="Filter events by any text..." class="w-full bg-gray-800 border border-gray-700 rounded-md pl-10 pr-4 py-2 text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                            </div>
+                            <div class="relative">
+                                <button id="downloadButton" class="flex items-center bg-gray-800 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-md transition">
+                                    Download
+                                    <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                </button>
+                                <div id="downloadMenu" class="hidden absolute right-0 mt-2 w-32 bg-gray-900 rounded-md shadow-lg z-10 border border-gray-700">
+                                    <a href="#" id="downloadJson" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-800">JSON</a>
+                                    <a href="#" id="downloadCsv" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-800">CSV</a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="eventsContainer" class="space-y-4 max-h-[40rem] overflow-y-auto pr-2"></div>
+                    </section>
+                </div>
+                <div id="initialMessage" class="flex items-center justify-center h-full bg-gray-900 rounded-xl border border-gray-700 p-8">
+                    <p class="text-gray-400 text-center">Enter your Account ID and run a query to see results.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Entity Details Modal -->
+    <div id="entityModal" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+        <div id="modalOverlay" class="absolute inset-0 bg-black bg-opacity-70 modal-overlay"></div>
+        <div id="modalContent" class="modal-content bg-gray-900 rounded-xl shadow-2xl border border-gray-700 w-full max-w-2xl m-4 transform scale-95">
+            <div class="flex justify-between items-center p-4 border-b border-gray-700">
+                <h3 class="text-xl font-semibold text-emerald-400">Entity Details</h3>
+                <button id="closeModalButton" class="text-gray-400 hover:text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+            <div id="modalBody" class="p-6"></div>
+        </div>
+    </div>
+
+    <!-- Flatpickr JS -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script>
+        let allFetchedEvents = []; // Store the full list of events from the last query
+
+        // --- MODAL SCRIPT ---
+        const entityModal = document.getElementById('entityModal');
+        const modalOverlay = document.getElementById('modalOverlay');
+        const modalContent = document.getElementById('modalContent');
+        const closeModalButton = document.getElementById('closeModalButton');
+        const modalBody = document.getElementById('modalBody');
+
+        function openModal() {
+            entityModal.classList.remove('hidden');
+            document.body.classList.add('overflow-hidden');
+            requestAnimationFrame(() => {
+                modalOverlay.classList.remove('opacity-0');
+                modalContent.classList.remove('scale-95');
+            });
+        }
+
+        function closeModal() {
+            modalOverlay.classList.add('opacity-0');
+            modalContent.classList.add('scale-95');
+            setTimeout(() => {
+                entityModal.classList.add('hidden');
+                document.body.classList.remove('overflow-hidden');
+            }, 300);
+        }
+
+        closeModalButton.addEventListener('click', closeModal);
+        modalOverlay.addEventListener('click', closeModal);
+
+        // --- MAIN APP SCRIPT ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('queryForm');
+            const eventFilterInput = document.getElementById('eventFilterInput');
+            const filteredEventCount = document.getElementById('filteredEventCount');
+            const initialMessage = document.getElementById('initialMessage');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const debugDetails = document.getElementById('debugDetails');
+            const debugConsole = document.getElementById('debugConsole');
+            const dateRangeRadios = document.querySelectorAll('input[name="dateRangeType"]');
+            const relativeDateContainer = document.getElementById('relativeDateContainer');
+            const absoluteDateContainer = document.getElementById('absoluteDateContainer');
+            const downloadButton = document.getElementById('downloadButton');
+            const downloadMenu = document.getElementById('downloadMenu');
+            const downloadJson = document.getElementById('downloadJson');
+            const downloadCsv = document.getElementById('downloadCsv');
+
+            // --- Initialize Flatpickr ---
+            const flatpickrConfig = {
+                enableTime: true,
+                dateFormat: "Y-m-d H:i",
+                altInput: true,
+                altFormat: "M j, Y h:i K",
+            };
+            const startDatePicker = flatpickr("#startDate", flatpickrConfig);
+            const endDatePicker = flatpickr("#endDate", flatpickrConfig);
+
+            document.getElementById('startDateIcon').addEventListener('click', () => startDatePicker.toggle());
+            document.getElementById('endDateIcon').addEventListener('click', () => endDatePicker.toggle());
+            
+            dateRangeRadios.forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    relativeDateContainer.classList.toggle('hidden', e.target.value !== 'relative');
+                    absoluteDateContainer.classList.toggle('hidden', e.target.value === 'relative');
+                });
+            });
+
+            // --- Download Menu Logic ---
+            downloadButton.addEventListener('click', () => {
+                downloadMenu.classList.toggle('hidden');
+            });
+
+            document.addEventListener('click', (event) => {
+                if (!downloadButton.contains(event.target) && !downloadMenu.contains(event.target)) {
+                    downloadMenu.classList.add('hidden');
+                }
+            });
+
+            downloadJson.addEventListener('click', (e) => {
+                e.preventDefault();
+                downloadData('json');
+                downloadMenu.classList.add('hidden');
+            });
+
+            downloadCsv.addEventListener('click', (e) => {
+                e.preventDefault();
+                downloadData('csv');
+                downloadMenu.classList.add('hidden');
+            });
+
+
+            eventFilterInput.addEventListener('input', () => {
+                const filterText = eventFilterInput.value.toLowerCase();
+                const eventsContainer = document.getElementById('eventsContainer');
+                const eventCards = eventsContainer.children;
+                let visibleCount = 0;
+
+                for (const card of eventCards) {
+                    const cardText = card.textContent.toLowerCase();
+                    if (cardText.includes(filterText)) {
+                        card.style.display = '';
+                        visibleCount++;
+                    } else {
+                        card.style.display = 'none';
+                    }
+                }
+                
+                const total = parseInt(filteredEventCount.dataset.total, 10);
+                const loaded = parseInt(filteredEventCount.dataset.loaded, 10);
+
+                if (loaded >= 5000 && total > 5000) {
+                    filteredEventCount.textContent = `Filtering ${visibleCount} of the first 5000 events`;
+                } else {
+                    filteredEventCount.textContent = `Showing ${visibleCount} of ${loaded} events`;
+                }
+            });
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const startTime = performance.now();
+                setLoading(true);
+                hideError();
+                
+                debugConsole.innerHTML = '';
+
+                try {
+                    const formData = new FormData(form);
+                    const accountId = parseInt(formData.get('accountId'), 10);
+                    if (!accountId) {
+                        showError("Account ID is required.");
+                        setLoading(false);
+                        return;
+                    }
+
+                    const obfuscatedAccountId = accountId.toString().substring(0, 4) + '*'.repeat(Math.max(0, accountId.toString().length - 4));
+                    const actionFilter = formData.get('actionIdentifier').trim() || 'None';
+                    const actorTypeFilter = formData.get('actorType').trim() || 'None';
+                    const actorEmailFilter = formData.get('actorEmail').trim() || 'None';
+                    const timeWindow = getHumanReadableDateRange(formData);
+                    
+                    logToConsole('--- Query Initiated ---');
+                    logToConsole(`Time Window: ${timeWindow}`);
+                    logToConsole(`Action Identifier Filter: ${actionFilter}`);
+                    logToConsole(`Actor Type Filter: ${actorTypeFilter}`);
+                    logToConsole(`Actor Email Filter: ${actorEmailFilter}`);
+                    logToConsole(`Endpoint: http://127.0.0.1:5001/query`);
+                    logToConsole(`Account ID: ${obfuscatedAccountId}`);
+                    logToConsole(`API Key: Handled securely on server`);
+                    logToConsole('Sending 5 GraphQL queries...');
+
+                    const nrqlClause = buildNrqlClause(formData);
+                    const queries = {
+                        total: `SELECT count(*) FROM NrAuditEvent ${nrqlClause}`,
+                        events: `SELECT * FROM NrAuditEvent ${nrqlClause} LIMIT MAX`,
+                        byAction: `SELECT count(*) FROM NrAuditEvent ${nrqlClause} FACET actionIdentifier LIMIT MAX`,
+                        byEmail: `SELECT count(*) FROM NrAuditEvent ${nrqlClause} FACET actorEmail LIMIT MAX`,
+                        byType: `SELECT count(*) FROM NrAuditEvent ${nrqlClause} FACET actorType LIMIT MAX`
+                    };
+                    const [totalRes, eventsRes, byActionRes, byEmailRes, byTypeRes] = await Promise.all([
+                        runNerdGraphQuery(accountId, queries.total),
+                        runNerdGraphQuery(accountId, queries.events),
+                        runNerdGraphQuery(accountId, queries.byAction),
+                        runNerdGraphQuery(accountId, queries.byEmail),
+                        runNerdGraphQuery(accountId, queries.byType)
+                    ]);
+
+                    const endTime = performance.now();
+                    const duration = ((endTime - startTime) / 1000).toFixed(2);
+                    
+                    logToConsole(`--- Query Complete ---`);
+                    logToConsole(`Total time: ${duration} seconds`);
+                    logToConsole(`Records returned in result set: ${eventsRes.length}`);
+
+                    renderResults({ totalRes, eventsRes, byActionRes, byEmailRes, byTypeRes }, timeWindow);
+                } catch (err) {
+                    showError(err.message || "An unknown error occurred.");
+                } finally {
+                    setLoading(false);
+                }
+            });
+
+            function buildNrqlClause(formData) {
+                const conditions = [];
+                const actionIdentifier = formData.get('actionIdentifier').trim();
+                const actorType = formData.get('actorType').trim();
+                const actorEmail = formData.get('actorEmail').trim();
+
+                if (actionIdentifier) {
+                    conditions.push(`actionIdentifier LIKE '%${actionIdentifier}%'`);
+                }
+                if (actorType) {
+                    conditions.push(`actorType LIKE '%${actorType}%'`);
+                }
+                if (actorEmail) {
+                    conditions.push(`actorEmail LIKE '%${actorEmail}%'`);
+                }
+
+                let whereClause = '';
+                if (conditions.length > 0) {
+                    whereClause = `WHERE ${conditions.join(' AND ')}`;
+                }
+
+                let timeClause = '';
+                const dateType = formData.get('dateRangeType');
+                if (dateType === 'relative') {
+                    timeClause = `SINCE ${formData.get('lastDays') || 7} DAYS AGO`;
+                } else {
+                    const start = formData.get('startDate');
+                    const end = formData.get('endDate');
+                    if (start && end) {
+                        timeClause = `SINCE '${start}' UNTIL '${end}'`;
+                    } else if (start) {
+                        timeClause = `SINCE '${start}'`;
+                    } else {
+                        timeClause = `SINCE 1 DAY AGO`;
+                    }
+                }
+                
+                return [whereClause, timeClause].filter(Boolean).join(' ');
+            }
+            
+            function getHumanReadableDateRange(formData) {
+                const dateType = formData.get('dateRangeType');
+                if (dateType === 'relative') {
+                    const days = formData.get('lastDays') || 7;
+                    return `(Last ${days} Days)`;
+                } else {
+                    const start = formData.get('startDate');
+                    const end = formData.get('endDate');
+                    const options = { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric' };
+                    if (start && end) {
+                        const startDate = new Date(start).toLocaleString(undefined, options);
+                        const endDate = new Date(end).toLocaleString(undefined, options);
+                        return `(${startDate} - ${endDate})`;
+                    } else if (start) {
+                        const startDate = new Date(start).toLocaleString(undefined, options);
+                        return `(Since ${startDate})`;
+                    }
+                    return '(Last Day)';
+                }
+            }
+
+            async function runNerdGraphQuery(accountId, nrql) {
+                const serverEndpoint = 'http://127.0.0.1:5001/query';
+                const graphqlQuery = {
+                    query: `query($accountId: Int!, $nrql: Nrql!) { actor { account(id: $accountId) { nrql(query: $nrql, timeout: 60) { results } } } }`,
+                    variables: { accountId, nrql }
+                };
+
+                logToConsole(`Sending Payload for NRQL: "${nrql.substring(0, 30)}..."`, graphqlQuery);
+
+                const response = await fetch(serverEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(graphqlQuery)
+                });
+
+                logToConsole(`Response Code from server: ${response.status} ${response.statusText}`);
+
+                const jsonResponse = await response.json();
+                if (!response.ok || jsonResponse.errors) {
+                    throw new Error(jsonResponse.error || `GraphQL Error: ${jsonResponse.errors.map(e => e.message).join(', ')}`);
+                }
+                return jsonResponse.data.actor.account.nrql.results;
+            }
+
+            function renderResults(data, dateRangeString) {
+                allFetchedEvents = data.eventsRes;
+                const totalCount = data.totalRes[0]?.count || 0;
+                const eventsCount = data.eventsRes.length;
+                
+                document.getElementById('totalEvents').textContent = totalCount;
+                document.getElementById('eventDates').textContent = dateRangeString;
+                renderFacetList(document.getElementById('byActionIdentifier'), data.byActionRes);
+                renderFacetList(document.getElementById('byActorEmail'), data.byEmailRes);
+                renderFacetList(document.getElementById('byActorType'), data.byTypeRes);
+                renderEventCards(data.eventsRes);
+                eventFilterInput.value = '';
+                
+                const filteredEventCount = document.getElementById('filteredEventCount');
+                if (eventsCount >= 5000 && totalCount > 5000) {
+                    filteredEventCount.textContent = `Displaying first 5000 of ${totalCount} events (limit reached)`;
+                    filteredEventCount.classList.add('text-red-500', 'font-semibold');
+                    filteredEventCount.classList.remove('text-gray-400');
+                } else {
+                    filteredEventCount.textContent = `Showing ${eventsCount} of ${totalCount} events`;
+                    filteredEventCount.classList.remove('text-red-500', 'font-semibold');
+                    filteredEventCount.classList.add('text-gray-400');
+                }
+                filteredEventCount.dataset.total = totalCount;
+                filteredEventCount.dataset.loaded = eventsCount;
+
+                initialMessage.classList.add('hidden');
+                resultsContainer.classList.remove('hidden');
+
+            }
+            
+            function isValidGuid(targetId) {
+                return targetId && (targetId.endsWith('==') || targetId.includes('|'));
+            }
+
+            function renderEventCards(events) {
+                const container = document.getElementById('eventsContainer');
+                container.innerHTML = ''; 
+
+                if (!events || events.length === 0) {
+                    container.innerHTML = `<div class="bg-gray-900 p-6 rounded-lg border border-gray-700 text-center text-gray-400">No events.</div>`;
+                    return;
+                }
+
+                events.forEach(event => {
+                    const card = document.createElement('div');
+                    card.className = 'bg-gray-900 border border-gray-700 rounded-lg p-4 transition hover:bg-gray-800/50 hover:border-emerald-500/30';
+                    const formattedTimestamp = new Date(event.timestamp).toLocaleString();
+                    let linkHtml = '';
+
+                    if (isValidGuid(event.targetId)) {
+                        linkHtml = `
+                            <div class="mt-4 pt-3 border-t border-gray-700">
+                                <button onclick="showEntityDetails('${event.targetId}')" class="inline-flex items-center text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors">
+                                    Entity Details...
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                </button>
+                            </div>`;
+                    }
+                    
+                    card.innerHTML = `
+                        <div class="flex flex-col md:flex-row justify-between md:items-center mb-3 border-b border-gray-700 pb-3">
+                            <div class="font-mono text-emerald-400 text-sm break-all">${event.actionIdentifier || 'N/A'}</div>
+                            <div class="flex items-center text-xs text-gray-400 mt-2 md:mt-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                ${formattedTimestamp}
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <div class="flex items-center text-gray-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                    Actor
+                                </div>
+                                <div class="pl-6 font-medium text-gray-200 break-all">${event.actorEmail || 'N/A'}</div>
+                                <div class="pl-6 text-xs text-gray-400">${event.actorType || 'N/A'}</div>
+                            </div>
+                            <div>
+                                <div class="flex items-center text-gray-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    Description
+                                </div>
+                                <div class="pl-6 text-gray-300">${event.description || 'No description provided.'}</div>
+                            </div>
+                        </div>
+                        ${linkHtml}`;
+                    container.appendChild(card);
+                });
+            }
+
+            function renderFacetList(element, data) {
+                element.innerHTML = '';
+                if (!data || data.length === 0) {
+                    element.innerHTML = '<p class="text-gray-500">No data</p>';
+                    return;
+                }
+                data.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'flex justify-between items-center';
+                    const facetName = document.createElement('span');
+                    facetName.className = 'truncate text-gray-300';
+                    facetName.textContent = item.facet || '(not set)';
+                    const count = document.createElement('span');
+                    count.className = 'font-semibold text-emerald-400 bg-gray-800 px-2 py-0.5 rounded-full text-xs';
+                    count.textContent = item.count;
+                    div.appendChild(facetName);
+                    div.appendChild(count);
+                    element.appendChild(div);
+                });
+            }
+            
+            function setLoading(isLoading) {
+                const queryButton = document.getElementById('queryButton');
+                const buttonText = document.getElementById('buttonText');
+                const buttonSpinner = document.getElementById('buttonSpinner');
+                queryButton.disabled = isLoading;
+                buttonText.classList.toggle('hidden', isLoading);
+                buttonSpinner.classList.toggle('hidden', !isLoading);
+            }
+            
+            function showError(message) {
+                const errorText = document.getElementById('errorText');
+                const errorMessage = document.getElementById('errorMessage');
+                const debugDetails = document.getElementById('debugDetails');
+                errorText.textContent = message;
+                errorMessage.classList.remove('hidden');
+                debugDetails.open = true;
+            }
+
+            function hideError() {
+                const errorMessage = document.getElementById('errorMessage');
+                errorMessage.classList.add('hidden');
+            }
+
+            function logToConsole(message, data) {
+                const timestamp = new Date().toLocaleTimeString();
+                const logEntry = document.createElement('p');
+                logEntry.innerHTML = `<span class="text-gray-500">${timestamp}:</span> <span class="text-gray-300">${message}</span>`;
+                if (data) {
+                    const dataPre = document.createElement('pre');
+                    dataPre.className = 'text-emerald-300 bg-gray-950 p-1 rounded text-xs mt-1 whitespace-pre-wrap break-all';
+                    dataPre.textContent = JSON.stringify(data, null, 2);
+                    logEntry.appendChild(dataPre);
+                }
+                debugConsole.appendChild(logEntry);
+                debugConsole.scrollTop = debugConsole.scrollHeight;
+            }
+        });
+
+        function getFilteredEvents() {
+            const filterText = document.getElementById('eventFilterInput').value.toLowerCase();
+            if (!filterText) {
+                return allFetchedEvents; // Return all if no filter
+            }
+            return allFetchedEvents.filter(event => {
+                return JSON.stringify(event).toLowerCase().includes(filterText);
+            });
+        }
+
+        function convertToCSV(data) {
+            if (data.length === 0) return '';
+            const headers = Object.keys(data[0]);
+            const csvRows = [];
+            csvRows.push(headers.join(','));
+
+            for (const row of data) {
+                const values = headers.map(header => {
+                    let value = row[header];
+                    if (value === null || value === undefined) {
+                        value = '';
+                    } else if (typeof value === 'object') {
+                        value = JSON.stringify(value);
+                    }
+                    const stringValue = String(value);
+                    if (stringValue.includes('"') || stringValue.includes(',')) {
+                        return `"${stringValue.replace(/"/g, '""')}"`;
+                    }
+                    return stringValue;
+                });
+                csvRows.push(values.join(','));
+            }
+            return csvRows.join('\n');
+        }
+
+        function downloadData(format) {
+            const filteredEvents = getFilteredEvents();
+            if (filteredEvents.length === 0) {
+                alert("No filtered events to download.");
+                return;
+            }
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `events-${timestamp}.${format}`;
+            let content = '';
+            let mimeType = '';
+
+            if (format === 'json') {
+                content = JSON.stringify(filteredEvents, null, 2);
+                mimeType = 'application/json';
+            } else if (format === 'csv') {
+                content = convertToCSV(filteredEvents);
+                mimeType = 'text/csv';
+            }
+
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        
+        async function showEntityDetails(guid) {
+            const modalBody = document.getElementById('modalBody');
+            modalBody.innerHTML = '<div class="flex justify-center items-center p-8"><div class="spinner"></div></div>';
+            openModal();
+
+            try {
+                const response = await fetch('http://127.0.0.1:5001/entity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ guid: guid })
+                });
+
+                const jsonResponse = await response.json();
+                if (!response.ok || jsonResponse.errors) {
+                    throw new Error(jsonResponse.error || `GraphQL Error: ${jsonResponse.errors.map(e => e.message).join(', ')}`);
+                }
+
+                const entity = jsonResponse.data.actor.entity;
+                if (entity) {
+                    modalBody.innerHTML = `
+                        <div class="space-y-4 text-sm">
+                            <div>
+                                <div class="text-gray-400 font-medium">Name</div>
+                                <div class="text-lg text-white font-semibold">${entity.name}</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 font-medium">Type</div>
+                                <div class="font-mono text-gray-300 bg-gray-800 inline-block px-2 py-1 rounded">${entity.type} (${entity.entityType})</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 font-medium">Domain</div>
+                                <div class="text-gray-300">${entity.domain}</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 font-medium">Account</div>
+                                <div class="text-gray-300">${entity.account.name} (${entity.account.id})</div>
+                            </div>
+                             <div>
+                                <div class="text-gray-400 font-medium">GUID</div>
+                                <div class="text-gray-300 font-mono text-xs break-all">${entity.guid}</div>
+                            </div>
+                            <div class="pt-4 border-t border-gray-700">
+                                <a href="https://one.newrelic.com/redirect/entity/${entity.guid}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors">
+                                    View in New Relic
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                     modalBody.innerHTML = `<p class="text-red-400">Could not retrieve details for this entity.</p>`;
+                }
+            } catch (error) {
+                modalBody.innerHTML = `<p class="text-red-400">Error fetching entity details: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
